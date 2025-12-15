@@ -64,39 +64,48 @@ def convert_hwp_to_hwpx_using_maven(input_hwp: str, output_hwpx: str) -> bool:
             logger.error(f"hwp2hwpx 디렉토리를 찾을 수 없습니다: {hwp2hwpx_dir}")
             return False
 
+        jar_path = hwp2hwpx_dir / "target" / "hwp2hwpx-1.0.0.jar"
+        lib_path = hwp2hwpx_dir / "target" / "lib"
+
+        if not jar_path.exists():
+            logger.error(f"패키징된 JAR을 찾을 수 없습니다: {jar_path}")
+            return False
+
+        classpath = f"{jar_path}{os.pathsep}{lib_path}/*"
         cmd = [
-            'mvn',
-            'exec:java',
-            '-Dexec.mainClass=kr.dogfoot.hwp2hwpx.ConvertExample',
-            f'-Dexec.args={input_hwp} {output_hwpx}',
-            '-q'
+            "java",
+            "-cp",
+            classpath,
+            "kr.dogfoot.hwp2hwpx.ConvertExample",
+            input_hwp,
+            output_hwpx,
         ]
 
-        logger.info(f"Maven을 사용하여 HWP를 HWPX로 변환 중: {input_hwp} -> {output_hwpx}")
+        logger.info(f"JAR을 사용하여 HWP를 HWPX로 변환 중: {input_hwp} -> {output_hwpx}")
         result = subprocess.run(
             cmd,
             cwd=str(hwp2hwpx_dir),
             capture_output=True,
             text=True,
-            check=False
+            check=False,
         )
 
         if result.returncode == 0 and os.path.exists(output_hwpx):
-            logger.info(f"Maven 변환 성공: {output_hwpx}")
+            logger.info(f"JAR 변환 성공: {output_hwpx}")
             return True
         else:
-            logger.error(f"Maven 변환 실패 (returncode: {result.returncode})")
+            logger.error(f"JAR 변환 실패 (returncode: {result.returncode})")
             if result.stdout:
-                logger.error(f"Maven stdout: {result.stdout}")
+                logger.error(f"JAR stdout: {result.stdout}")
             if result.stderr:
-                logger.error(f"Maven stderr: {result.stderr}")
+                logger.error(f"JAR stderr: {result.stderr}")
             return False
 
     except FileNotFoundError:
-        logger.error("Maven을 찾을 수 없습니다.")
+        logger.error("java 실행 파일을 찾을 수 없습니다.")
         return False
     except Exception as e:
-        logger.error(f"Maven 변환 중 오류 발생: {e}")
+        logger.error(f"JAR 변환 중 오류 발생: {e}")
         return False
 
 
