@@ -7,6 +7,8 @@ import logging
 from contextlib import asynccontextmanager
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
+import subprocess
+from pathlib import Path
 
 # HWP 변환 로직 임포트
 from .util import convert_hwp_to_pdf, TEMP_DIR
@@ -53,6 +55,101 @@ def cleanup_files(*file_paths):
                 logger.error(f"임시 파일 정리 실패 {path}: {e}")
 
 
+def convert_hwp_to_hwpx_using_maven(input_hwp: str, output_hwpx: str) -> bool:
+    try:
+        current_file = Path(__file__).resolve()
+        hwp2hwpx_dir = current_file.parent / "hwp2hwpx"
+
+        if not hwp2hwpx_dir.exists():
+            logger.error(f"hwp2hwpx 디렉토리를 찾을 수 없습니다: {hwp2hwpx_dir}")
+            return False
+
+        cmd = [
+            'mvn',
+            'exec:java',
+            '-Dexec.mainClass=kr.dogfoot.hwp2hwpx.ConvertExample',
+            f'-Dexec.args={input_hwp} {output_hwpx}',
+            '-q'
+        ]
+
+        logger.info(f"Maven을 사용하여 HWP를 HWPX로 변환 중: {input_hwp} -> {output_hwpx}")
+        result = subprocess.run(
+            cmd,
+            cwd=str(hwp2hwpx_dir),
+            capture_output=True,
+            text=True,
+            check=False
+        )
+
+        if result.returncode == 0 and os.path.exists(output_hwpx):
+            logger.info(f"Maven 변환 성공: {output_hwpx}")
+            return True
+        else:
+            logger.error(f"Maven 변환 실패 (returncode: {result.returncode})")
+            if result.stdout:
+                logger.error(f"Maven stdout: {result.stdout}")
+            if result.stderr:
+                logger.error(f"Maven stderr: {result.stderr}")
+            return False
+
+    except FileNotFoundError:
+        logger.error("Maven을 찾을 수 없습니다.")
+        return False
+    except Exception as e:
+        logger.error(f"Maven 변환 중 오류 발생: {e}")
+        return False
+
+
+async def convert_with_retry(
+    executor: ThreadPoolExecutor, 
+    input_path: str, 
+    output_path: str,
+    original_ext: str
+) -> tuple[bool, str]:
+    success = await convert_hwp_to_pdf_async_wrapper(executor, input_path, output_path)
+    if success:
+        return True, input_path
+
+    logger.warning(f"첫 번째 변환 시도 실패: {input_path}")
+
+    if original_ext.lower() == '.hwp':
+        hwpx_path = os.path.splitext(input_path)[0] + '.hwpx'
+        if os.path.exists(hwpx_path):
+            logger.info(f"확장자를 .hwpx로 변경하여 재시도: {hwpx_path}")
+            success = await convert_hwp_to_pdf_async_wrapper(executor, hwpx_path, output_path)
+            if success:
+                return True, hwpx_path
+            logger.warning(f"확장자 변경 재시도 실패: {hwpx_path}")
+        else:
+            logger.info(f"확장자를 .hwpx로 변경한 파일이 존재하지 않음: {hwpx_path}")
+
+        converted_hwpx_path = os.path.join(TEMP_DIR, f"{uuid.uuid4()}.hwpx")
+        logger.info(f"Maven을 사용하여 HWP를 HWPX로 변환 후 재시도")
+        if convert_hwp_to_hwpx_using_maven(input_path, converted_hwpx_path):
+            success = await convert_hwp_to_pdf_async_wrapper(
+                executor, converted_hwpx_path, output_path
+            )
+            if success:
+                return True, converted_hwpx_path
+            else:
+                cleanup_files(converted_hwpx_path)
+        else:
+            logger.error(f"Maven HWP->HWPX 변환 실패: {input_path}")
+
+    elif original_ext.lower() == '.hwpx':
+        hwp_path = os.path.splitext(input_path)[0] + '.hwp'
+        if os.path.exists(hwp_path):
+            logger.info(f"확장자를 .hwp로 변경하여 재시도: {hwp_path}")
+            success = await convert_hwp_to_pdf_async_wrapper(executor, hwp_path, output_path)
+            if success:
+                return True, hwp_path
+            logger.warning(f"확장자 변경 재시도 실패: {hwp_path}")
+        else:
+            logger.info(f"확장자를 .hwp로 변경한 파일이 존재하지 않음: {hwp_path}")
+
+    return False, input_path
+
+
 @app.post("/convert/hwp-to-pdf")
 async def convert_hwp(request: Request, file: UploadFile = File(...)):
     if not file.filename or not file.filename.lower().endswith((".hwp", ".hwpx")):
@@ -76,21 +173,27 @@ async def convert_hwp(request: Request, file: UploadFile = File(...)):
             status_code=500, detail="업로드된 파일을 저장하는데 실패했습니다."
         )
 
-    success = await convert_hwp_to_pdf_async_wrapper(
-        request.app.state.executor, input_path, output_path
+    success, final_input_path = await convert_with_retry(
+        request.app.state.executor, input_path, output_path, file_ext
     )
 
     if not success:
         cleanup_files(input_path)
+        if final_input_path != input_path and os.path.exists(final_input_path):
+            cleanup_files(final_input_path)
         raise HTTPException(
             status_code=500, detail="HWP 파일을 PDF로 변환하는데 실패했습니다."
         )
 
     response_filename = f"{os.path.splitext(file.filename)[0]}.pdf"
 
+    files_to_cleanup = [input_path, output_path]
+    if final_input_path != input_path and os.path.exists(final_input_path):
+        files_to_cleanup.append(final_input_path)
+
     return FileResponse(
         output_path,
         media_type="application/pdf",
         filename=response_filename,
-        background=BackgroundTask(cleanup_files, input_path, output_path),
+        background=BackgroundTask(cleanup_files, *files_to_cleanup),
     )

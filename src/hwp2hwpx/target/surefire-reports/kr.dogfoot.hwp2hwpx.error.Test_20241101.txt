@@ -1,0 +1,4 @@
+-------------------------------------------------------------------------------
+Test set: kr.dogfoot.hwp2hwpx.error.Test_20241101
+-------------------------------------------------------------------------------
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in kr.dogfoot.hwp2hwpx.error.Test_20241101
