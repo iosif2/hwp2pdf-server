@@ -116,8 +116,10 @@ async def convert_with_retry(
     original_ext: str
 ) -> tuple[bool, str]:
     success = await convert_hwp_to_pdf_async_wrapper(executor, input_path, output_path)
-    if success:
+    if success and os.path.exists(output_path):
         return True, input_path
+    if success and not os.path.exists(output_path):
+        logger.error(f"PDF가 생성되지 않았습니다: {output_path}")
 
     logger.warning(f"첫 번째 변환 시도 실패: {input_path}")
 
@@ -126,8 +128,10 @@ async def convert_with_retry(
         if os.path.exists(hwpx_path):
             logger.info(f"확장자를 .hwpx로 변경하여 재시도: {hwpx_path}")
             success = await convert_hwp_to_pdf_async_wrapper(executor, hwpx_path, output_path)
-            if success:
+            if success and os.path.exists(output_path):
                 return True, hwpx_path
+            if success:
+                logger.error(f"PDF가 생성되지 않았습니다: {output_path}")
             logger.warning(f"확장자 변경 재시도 실패: {hwpx_path}")
         else:
             logger.info(f"확장자를 .hwpx로 변경한 파일이 존재하지 않음: {hwpx_path}")
@@ -138,8 +142,10 @@ async def convert_with_retry(
             success = await convert_hwp_to_pdf_async_wrapper(
                 executor, converted_hwpx_path, output_path
             )
-            if success:
+            if success and os.path.exists(output_path):
                 return True, converted_hwpx_path
+            if success:
+                logger.error(f"PDF가 생성되지 않았습니다: {output_path}")
             else:
                 cleanup_files(converted_hwpx_path)
         else:
@@ -150,8 +156,10 @@ async def convert_with_retry(
         if os.path.exists(hwp_path):
             logger.info(f"확장자를 .hwp로 변경하여 재시도: {hwp_path}")
             success = await convert_hwp_to_pdf_async_wrapper(executor, hwp_path, output_path)
-            if success:
+            if success and os.path.exists(output_path):
                 return True, hwp_path
+            if success:
+                logger.error(f"PDF가 생성되지 않았습니다: {output_path}")
             logger.warning(f"확장자 변경 재시도 실패: {hwp_path}")
         else:
             logger.info(f"확장자를 .hwp로 변경한 파일이 존재하지 않음: {hwp_path}")
