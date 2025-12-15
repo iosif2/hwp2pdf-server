@@ -71,6 +71,15 @@ def convert_hwp_to_hwpx_using_maven(input_hwp: str, output_hwpx: str) -> bool:
             logger.error(f"패키징된 JAR을 찾을 수 없습니다: {jar_path}")
             return False
 
+        # 의존성 JAR 존재 여부 확인
+        if not lib_path.exists():
+            logger.error(f"의존성 폴더(target/lib)가 없습니다. mvn dependency:copy-dependencies 실행 필요: {lib_path}")
+            return False
+        has_dep = any(lib_path.glob("*.jar"))
+        if not has_dep:
+            logger.error(f"target/lib에 의존성 JAR이 없습니다. mvn dependency:copy-dependencies 실행 필요: {lib_path}")
+            return False
+
         classpath = f"{jar_path}{os.pathsep}{lib_path}/*"
         cmd = [
             "java",
