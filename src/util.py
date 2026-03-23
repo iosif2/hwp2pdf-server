@@ -1,6 +1,7 @@
 import logging
 import importlib
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -11,10 +12,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# 임시 파일 저장 경로 설정 (실제 경로로 변경 필요)
 TEMP_DIR = "C:\\temp_hwp_files"
-if not os.path.exists(TEMP_DIR):
-    os.makedirs(TEMP_DIR)
 
 SECURITY_MODULE_NAME = os.getenv("HWP_SECURITY_MODULE_NAME", "FilePathCheckerModule")
 SECURITY_MODULE_DLL_ENV = "HWP_SECURITY_MODULE_DLL"
@@ -80,6 +78,11 @@ def _load_pyhwpx_factory() -> PyHwpFactory:
     return cast(PyHwpFactory, getattr(module, "Hwp"))
 
 
+def _ensure_temp_dir() -> None:
+    os.makedirs(TEMP_DIR, exist_ok=True)
+
+
+@lru_cache(maxsize=1)
 def _discover_security_module_path() -> str | None:
     configured_path = os.getenv(SECURITY_MODULE_DLL_ENV)
     candidate_paths: list[Path] = []
@@ -243,6 +246,7 @@ def convert_hwp_to_pdf(hwp_file_path: str, output_pdf_path: str) -> bool:
     hwp = None  # Hwp 객체를 try 블록 외부에서 접근할 수 있도록 초기화
 
     try:
+        _ensure_temp_dir()
         hwp = _create_hwp_client()
         _register_security_module(hwp)
         _open_document(hwp, hwp_file_path)
