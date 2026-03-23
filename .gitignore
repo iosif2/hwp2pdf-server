@@ -193,3 +193,14 @@ cython_debug/
 .cursorindexingignore
 
 .DS_Store
+
+# Java / Maven / Eclipse build artifacts
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+target/
+.classpath
+.project
+.settings/
